@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VIGIL AI – Central Security Monitoring Console</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg-main: #0B0F19;
+      --bg-surface: #131B2E;
+      --bg-card: #1A243B;
+      --primary: #6366F1;
+      --accent-danger: #EF4444;
+      --accent-warning: #F59E0B;
+      --accent-success: #10B981;
+      --text-main: #F9FAFB;
+      --text-muted: #9CA3AF;
+      --border-color: #2D3748;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; }
+    header { background-color: var(--bg-surface); padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
+    .logo-badge { display: flex; align-items: center; gap: 12px; }
+    .shield-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #6366F1, #EF4444); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; }
+    h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    .status-tag { background: rgba(16, 185, 129, 0.15); color: var(--accent-success); border: 1px solid var(--accent-success); padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .pulse-dot { width: 8px; height: 8px; background: var(--accent-success); border-radius: 50%; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } 100% { opacity: 1; transform: scale(1); } }
+    main { padding: 28px 32px; max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+    .kpi-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+    .kpi-title { font-size: 13px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+    .kpi-value { font-size: 32px; font-weight: 700; margin-top: 8px; }
+    .card-danger { border-left: 4px solid var(--accent-danger); }
+    .card-warning { border-left: 4px solid var(--accent-warning); }
+    .card-success { border-left: 4px solid var(--accent-success); }
+    .card-primary { border-left: 4px solid var(--primary); }
+    .content-split { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    @media (max-width: 1024px) { .content-split { grid-template-columns: 1fr; } }
+    .panel { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; }
+    .panel-title { font-size: 16px; font-weight: 600; }
+    #map { height: 420px; border-radius: 8px; border: 1px solid var(--border-color); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    th { padding: 12px; background: var(--bg-card); color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border-color); }
+    td { padding: 12px; border-bottom: 1px solid var(--border-color); }
+    tr:hover { background: rgba(255,255,255,0.02); }
+    .badge { padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .badge-critical { background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .badge-high { background: rgba(245, 158, 11, 0.2); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-active { background: rgba(239, 68, 68, 0.25); color: #F87171; }
+    .badge-resolved { background: rgba(16, 185, 129, 0.2); color: #34D399; }
+    .btn { padding: 6px 12px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-resolve { background: #059669; color: white; }
+    .btn-resolve:hover { background: #10B981; }
+    .empty-state { text-align: center; padding: 32px; color: var(--text-muted); font-style: italic; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-badge">
+      <div class="shield-icon">🛡️</div>
+      <div>
+        <h1>VIGIL AI – Command & Monitoring Console</h1>
+        <p style="font-size: 12px; color: var(--text-muted);">Real-time Central Emergency & Geospatial Telemetry Feed</p>
+      </div>
+    </div>
+    <div class="status-tag">
+      <div class="pulse-dot"></div>
+      System Live
+    </div>
+  </header>
+
+  <main>
+    <div class="kpi-grid">
+      <div class="kpi-card card-danger">
+        <div class="kpi-title">Active Emergencies</div>
+        <div class="kpi-value" id="kpi-active-sos" style="color: var(--accent-danger)">0</div>
+      </div>
+      <div class="kpi-card card-warning">
+        <div class="kpi-title">Reported Incidents</div>
+        <div class="kpi-value" id="kpi-incidents" style="color: var(--accent-warning)">0</div>
+      </div>
+      <div class="kpi-card card-primary">
+        <div class="kpi-title">Registered Users</div>
+        <div class="kpi-value" id="kpi-users" style="color: var(--primary)">0</div>
+      </div>
+      <div class="kpi-card card-success">
+        <div class="kpi-title">Configured Safety Zones</div>
+        <div class="kpi-value" id="kpi-zones" style="color: var(--accent-success)">0</div>
+      </div>
+    </div>
+
+    <div class="content-split">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Geospatial Surveillance & Incident Heatmap</div>
+          <span style="font-size: 12px; color: var(--text-muted);">OpenStreetMap Real-time Feed</span>
+        </div>
+        <div id="map"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Active Emergency Signals</div>
+          <span style="font-size: 12px; color: var(--accent-danger); font-weight: 600;">Live SOS Dispatch</span>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Alert Type</th>
+                <th>Risk Score</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="emergencies-tbody">
+              <tr><td colspan="6" class="empty-state">Polling for incoming emergency alerts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Recent Community Safety Incidents</div>
+        <span style="font-size: 12px; color: var(--text-muted);">Submitted via Mobile App</span>
+      </div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Date/Time</th>
+              <th>Category</th>
+              <th>Description</th>
+              <th>Severity</th>
+              <th>Location</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="incidents-tbody">
+            <tr><td colspan="6" class="empty-state">Loading incident history...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Initialize Map
+    const map = L.map('map').setView([12.9716, 77.5946], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let markersLayer = L.layerGroup().addTo(map);
+
+    async function fetchDashboardData() {
+      try {
+        const res = await fetch('/api/admin/dashboard');
+        const json = await res.json();
+        if (!json.success) return;
+
+        const metrics = json.data.metrics;
+        document.getElementById('kpi-active-sos').innerText = metrics.active_emergencies;
+        document.getElementById('kpi-incidents').innerText = metrics.total_incidents;
+        document.getElementById('kpi-users').innerText = metrics.total_users;
+        document.getElementById('kpi-zones').innerText = metrics.safety_zones;
+
+        // Render emergencies
+        const emTbody = document.getElementById('emergencies-tbody');
+        if (json.data.recent_emergencies.length === 0) {
+          emTbody.innerHTML = '<tr><td colspan="6" class="empty-state">No emergency alerts recorded. System is quiet.</td></tr>';
+        } else {
+          emTbody.innerHTML = json.data.recent_emergencies.map(e => `
+            <tr>
+              <td>${new Date(e.created_at).toLocaleTimeString()}</td>
+              <td><strong>${e.user_name || 'User #' + e.user_id}</strong><br><small style="color:var(--text-muted)">${e.user_phone || ''}</small></td>
+              <td><span class="badge ${e.severity === 'CRITICAL' ? 'badge-critical' : 'badge-high'}">${e.alert_type}</span></td>
+              <td><span style="font-weight: bold; color: ${e.risk_score > 70 ? '#EF4444' : '#F59E0B'}">${e.risk_score} / 100</span></td>
+              <td><span class="badge ${e.status === 'ACTIVE' ? 'badge-active' : 'badge-resolved'}">${e.status}</span></td>
+              <td>
+                ${e.status === 'ACTIVE' ? `
+                  <button class="btn btn-resolve" onclick="resolveEmergency(${e.id})">Mark Resolved</button>
+                ` : '<span style="color:var(--text-muted)">Resolved</span>'}
+              </td>
+            </tr>
+          `).join('');
+        }
+
+        // Render incidents
+        const incTbody = document.getElementById('incidents-tbody');
+        if (json.data.recent_incidents.length === 0) {
+          incTbody.innerHTML = '<tr><td colspan="6" class="empty-state">No incidents reported yet.</td></tr>';
+        } else {
+          incTbody.innerHTML = json.data.recent_incidents.map(i => `
+            <tr>
+              <td>${new Date(i.created_at).toLocaleString()}</td>
+              <td><strong>${i.category}</strong></td>
+              <td>${i.description}</td>
+              <td><span class="badge ${i.severity === 'HIGH' || i.severity === 'CRITICAL' ? 'badge-critical' : 'badge-high'}">${i.severity}</span></td>
+              <td>(${i.latitude.toFixed(4)}, ${i.longitude.toFixed(4)})</td>
+              <td><span class="badge badge-resolved">${i.status}</span></td>
+            </tr>
+          `).join('');
+        }
+      } catch (err) {
+        console.error('Error fetching admin data:', err);
+      }
+    }
+
+    async function fetchMapHeatmap() {
+      try {
+        const res = await fetch('/api/analytics/heatmap');
+        const json = await res.json();
+        if (!json.success) return;
+
+        markersLayer.clearLayers();
+        const points = json.data.points;
+
+        points.forEach(p => {
+          let color = '#3B82F6';
+          let label = 'Point';
+          let radius = 10;
+
+          if (p.type === 'EMERGENCY') {
+            color = '#EF4444';
+            label = `🚨 EMERGENCY: ${p.alert_type}`;
+            radius = 16;
+          } else if (p.type === 'ZONE') {
+            color = p.zone_type === 'HIGH_RISK' ? '#DC2626' : (p.zone_type === 'CAUTION' ? '#F59E0B' : '#10B981');
+            label = `Safety Zone: ${p.zone_type}`;
+            radius = 22;
+          } else if (p.type === 'INCIDENT') {
+            color = '#F97316';
+            label = `Incident: ${p.category}`;
+            radius = 12;
+          }
+
+          L.circleMarker([p.latitude, p.longitude], {
+            radius: radius,
+            fillColor: color,
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.7
+          }).bindPopup(`<b>${label}</b><br>Lat: ${p.latitude}, Lon: ${p.longitude}`).addTo(markersLayer);
+        });
+      } catch (err) {
+        console.error('Error fetching heatmap points:', err);
+      }
+    }
+
+    async function resolveEmergency(id) {
+      if (!confirm('Mark emergency #' + id + ' as resolved?')) return;
+      try {
+        const res = await fetch(`/api/emergency/${id}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        fetchDashboardData();
+        fetchMapHeatmap();
+      } catch (e) {
+        alert('Action failed: ' + e);
+      }
+    }
+
+    // Polling interval
+    fetchDashboardData();
+    fetchMapHeatmap();
+    setInterval(() => {
+      fetchDashboardData();
+      fetchMapHeatmap();
+    }, 4000);
+  </script>
+</body>
+</html>
