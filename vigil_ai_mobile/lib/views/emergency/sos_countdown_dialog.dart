@@ -42,8 +42,21 @@ class _SosCountdownDialogState extends ConsumerState<SosCountdownDialog> with Si
     // When countdown ends and emergency becomes active, navigate to active emergency view
     ref.listen<EmergencyState>(emergencyProvider, (prev, next) {
       if (next.isEmergencyActive && !(prev?.isEmergencyActive ?? false)) {
-        Navigator.pop(context);
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
         context.push('/emergency');
+      } else if (next.lastError != null && next.lastError != prev?.lastError) {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.sosRed,
+            content: Text(next.lastError!),
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
     });
 
@@ -55,10 +68,10 @@ class _SosCountdownDialogState extends ConsumerState<SosCountdownDialog> with Si
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.sosRed.withOpacity(0.5), width: 1.5),
+          border: Border.all(color: AppColors.sosRed.withValues(alpha: 0.5), width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: AppColors.sosRed.withOpacity(0.3),
+              color: AppColors.sosRed.withValues(alpha: 0.3),
               blurRadius: 30,
               spreadRadius: 2,
             ),
@@ -73,7 +86,7 @@ class _SosCountdownDialogState extends ConsumerState<SosCountdownDialog> with Si
                 width: 110,
                 height: 110,
                 decoration: BoxDecoration(
-                  color: AppColors.sosRed.withOpacity(0.15),
+                  color: AppColors.sosRed.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.sosRed, width: 3),
                 ),

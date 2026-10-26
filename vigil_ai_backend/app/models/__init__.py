@@ -120,6 +120,8 @@ class EmergencyAlert(db.Model):
     description = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(20), default='ACTIVE', index=True)  # ACTIVE, ACKNOWLEDGED, RESOLVED, CANCELLED
     is_live_sharing = db.Column(db.Boolean, default=True)
+    tracking_token = db.Column(db.String(64), unique=True, index=True, nullable=True)
+    last_location_update = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     resolved_at = db.Column(db.DateTime, nullable=True)
     acknowledged_by = db.Column(db.String(120), nullable=True)
@@ -139,9 +141,38 @@ class EmergencyAlert(db.Model):
             'description': self.description,
             'status': self.status,
             'is_live_sharing': self.is_live_sharing,
+            'tracking_token': self.tracking_token,
+            'last_location_update': self.last_location_update.isoformat() if self.last_location_update else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
             'acknowledged_by': self.acknowledged_by
+        }
+
+    def to_public_dict(self):
+        recent_locations = LocationHistory.query.filter_by(emergency_id=self.id)\
+            .order_by(LocationHistory.timestamp.desc()).limit(30).all()
+        breadcrumbs = [{
+            'latitude': loc.latitude,
+            'longitude': loc.longitude,
+            'accuracy': loc.accuracy,
+            'timestamp': loc.timestamp.isoformat() if loc.timestamp else None
+        } for loc in reversed(recent_locations)]
+
+        return {
+            'emergency_id': self.id,
+            'user_name': self.user.full_name if self.user else 'Vigil AI User',
+            'alert_type': self.alert_type,
+            'severity': self.severity,
+            'status': self.status,
+            'is_live_sharing': self.is_live_sharing,
+            'latitude': self.latitude,
+            'longitude': self.longitude,
+            'accuracy': self.accuracy,
+            'description': self.description,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_location_update': self.last_location_update.isoformat() if self.last_location_update else (self.created_at.isoformat() if self.created_at else None),
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
+            'breadcrumbs': breadcrumbs
         }
 
 

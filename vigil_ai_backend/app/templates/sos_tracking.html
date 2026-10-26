@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VIGIL AI – Emergency SOS Live Location Tracking</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --bg-surface: #131b2e;
+      --bg-card: #1a243b;
+      --border: #2d3748;
+      --sos-red: #ef4444;
+      --sos-red-glow: rgba(239, 68, 68, 0.35);
+      --safe-green: #10b981;
+      --caution-yellow: #f59e0b;
+      --text-primary: #f9fafb;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
+    body { background-color: var(--bg-dark); color: var(--text-primary); min-height: 100vh; display: flex; flex-direction: column; }
+    
+    header {
+      background-color: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .shield-badge {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #6366f1, #ef4444);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .live-badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge-active {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--sos-red);
+      border: 1px solid var(--sos-red);
+    }
+    .badge-resolved {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--safe-green);
+      border: 1px solid var(--safe-green);
+    }
+    .badge-cancelled {
+      background: rgba(156, 163, 175, 0.2);
+      color: var(--text-secondary);
+      border: 1px solid var(--text-secondary);
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse-ring 1.5s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.4); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 16px;
+      gap: 16px;
+    }
+
+    .alert-banner {
+      background: var(--bg-surface);
+      border: 2px solid var(--sos-red);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 4px 20px var(--sos-red-glow);
+    }
+    .alert-banner.resolved {
+      border-color: var(--safe-green);
+      box-shadow: 0 4px 20px rgba(16, 185, 129, 0.2);
+    }
+    .banner-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .victim-name {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+    .alert-type-tag {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--sos-red);
+    }
+    .banner-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+    .telemetry-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      background: var(--bg-card);
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .telemetry-item span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .telemetry-item strong {
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    /* Map container */
+    #map-wrapper {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      height: 480px;
+      min-height: 380px;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    .map-overlay-status {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 500;
+      background: rgba(11, 15, 25, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Actions */
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-call {
+      background: var(--sos-red);
+      color: white;
+    }
+    .btn-call:hover {
+      background: #dc2626;
+    }
+    .btn-directions {
+      background: #4f46e5;
+      color: white;
+    }
+    .btn-directions:hover {
+      background: #4338ca;
+    }
+    .btn-share {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+    .btn-share:hover {
+      background: var(--bg-card);
+    }
+
+    /* Pulse marker styling */
+    .radar-pulse-marker {
+      width: 24px;
+      height: 24px;
+      background: #ef4444;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 15px #ef4444;
+      animation: radar-blip 1.8s infinite;
+    }
+    @keyframes radar-blip {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8); }
+      70% { box-shadow: 0 0 0 25px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .resolved-marker {
+      width: 20px;
+      height: 20px;
+      background: #10b981;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+    }
+
+    footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      background: var(--bg-surface);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="shield-badge">🛡️</div>
+      <div class="brand-title">VIGIL AI <span style="font-weight:400; color:var(--text-secondary); font-size:13px;">Live SOS</span></div>
+    </div>
+    <div id="status-badge" class="live-badge badge-active">
+      <span class="pulse-dot"></span>
+      <span id="status-text">ACTIVE SOS</span>
+    </div>
+  </header>
+
+  <main>
+    {% if error %}
+    <div class="alert-banner" style="border-color: var(--border);">
+      <h2 style="color:var(--sos-red); margin-bottom: 8px;">Invalid Tracking Link</h2>
+      <p style="color:var(--text-secondary); font-size: 14px;">{{ error }}</p>
+    </div>
+    {% else %}
+
+    <div id="alert-banner" class="alert-banner">
+      <div class="banner-top">
+        <div class="victim-name" id="user-name">{{ emergency.user.full_name if emergency.user else "Vigil AI User" }}</div>
+        <div class="alert-type-tag" id="alert-type">{{ emergency.alert_type }}</div>
+      </div>
+      <div class="banner-desc" id="status-desc">
+        🚨 Emergency SOS active. Live GPS location is streaming from the user's mobile device.
+      </div>
+      <div class="telemetry-row">
+        <div class="telemetry-item">
+          <span>Current Coordinates</span>
+          <strong id="coords-text">{{ "%.5f"|format(emergency.latitude) }}, {{ "%.5f"|format(emergency.longitude) }}</strong>
+        </div>
+        <div class="telemetry-item">
+          <span>GPS Accuracy</span>
+          <strong id="accuracy-text">±{{ emergency.accuracy|round(1) }} meters</strong>
+        </div>
+        <div class="telemetry-item">
+          <span>Last Received</span>
+          <strong id="time-text">Just now</strong>
+        </div>
+        <div class="telemetry-item">
+          <span>Live Pings</span>
+          <strong id="ping-count">1 received</strong>
+        </div>
+      </div>
+    </div>
+
+    <div id="map-wrapper">
+      <div class="map-overlay-status" id="radar-tag">
+        <span class="pulse-dot"></span> Live GPS Stream Active (<span id="refresh-countdown">3</span>s)
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <div class="action-grid">
+      <a href="tel:112" class="btn btn-call">
+        🚨 Call Police (112)
+      </a>
+      <a id="nav-btn" href="https://www.google.com/maps/dir/?api=1&destination={{ emergency.latitude }},{{ emergency.longitude }}" target="_blank" class="btn btn-directions">
+        🗺️ Directions in Google Maps
+      </a>
+      <button class="btn btn-share" onclick="shareTrackingLink()">
+        📋 Copy Tracking Link
+      </button>
+    </div>
+
+    {% endif %}
+  </main>
+
+  <footer>
+    VIGIL AI – AI-Powered Women Safety & Autonomous Distress Response System • End-to-End Secure Live Tracking
+  </footer>
+
+  {% if not error and emergency %}
+  <script>
+    const TOKEN = "{{ token }}";
+    let curLat = {{ emergency.latitude }};
+    let curLon = {{ emergency.longitude }};
+    let isEmergencyActive = "{{ emergency.status }}" === "ACTIVE";
+    let pingCount = 1;
+    let secondsSinceLastPing = 0;
+    let countdownSecs = 3;
+
+    // Initialize Leaflet Map
+    const map = L.map('map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([curLat, curLon], 16);
+
+    // OpenStreetMap Dark Theme Tiles
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd'
+    }).addTo(map);
+
+    // Marker Icon
+    const pulseIcon = L.divIcon({
+      className: 'custom-radar-icon',
+      html: '<div class="radar-pulse-marker"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    const resolvedIcon = L.divIcon({
+      className: 'custom-resolved-icon',
+      html: '<div class="resolved-marker"></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
+    });
+
+    let userMarker = L.marker([curLat, curLon], {
+      icon: isEmergencyActive ? pulseIcon : resolvedIcon
+    }).addTo(map);
+
+    // Trail polyline
+    let breadcrumbLine = L.polyline([[curLat, curLon]], {
+      color: '#ef4444',
+      weight: 4,
+      opacity: 0.7,
+      dashArray: '4, 8'
+    }).addTo(map);
+
+    // Accuracy circle
+    let accuracyCircle = L.circle([curLat, curLon], {
+      radius: {{ emergency.accuracy or 10.0 }},
+      color: '#ef4444',
+      fillColor: '#ef4444',
+      fillOpacity: 0.15,
+      weight: 1
+    }).addTo(map);
+
+    function updateUI(data) {
+      if (!data) return;
+
+      curLat = data.latitude;
+      curLon = data.longitude;
+      const status = data.status;
+      isEmergencyActive = (status === 'ACTIVE');
+
+      // Update text
+      document.getElementById('coords-text').innerText = `${curLat.toFixed(5)}, ${curLon.toFixed(5)}`;
+      document.getElementById('accuracy-text').innerText = `±${Math.round(data.accuracy || 10)} meters`;
+      document.getElementById('nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${curLat},${curLon}`;
+      
+      pingCount++;
+      document.getElementById('ping-count').innerText = `${pingCount} updates`;
+      secondsSinceLastPing = 0;
+      document.getElementById('time-text').innerText = `Just now`;
+
+      // Update status badges
+      const badge = document.getElementById('status-badge');
+      const banner = document.getElementById('alert-banner');
+      const statusText = document.getElementById('status-text');
+      const statusDesc = document.getElementById('status-desc');
+      const radarTag = document.getElementById('radar-tag');
+
+      if (status === 'ACTIVE') {
+        badge.className = 'live-badge badge-active';
+        statusText.innerText = 'ACTIVE SOS';
+        banner.className = 'alert-banner';
+        userMarker.setIcon(pulseIcon);
+      } else if (status === 'RESOLVED') {
+        badge.className = 'live-badge badge-resolved';
+        badge.innerHTML = '✔ RESOLVED';
+        banner.className = 'alert-banner resolved';
+        statusDesc.innerText = '✅ The user has marked themselves SAFE. This emergency has been resolved.';
+        userMarker.setIcon(resolvedIcon);
+        radarTag.innerHTML = '✔ Emergency Resolved (Tracking Stopped)';
+      } else if (status === 'CANCELLED') {
+        badge.className = 'live-badge badge-cancelled';
+        badge.innerHTML = 'CANCELLED';
+        statusDesc.innerText = 'The user has cancelled this alert.';
+        userMarker.setIcon(resolvedIcon);
+        radarTag.innerHTML = 'Alert Cancelled';
+      }
+
+      // Move marker and accuracy circle
+      userMarker.setLatLng([curLat, curLon]);
+      accuracyCircle.setLatLng([curLat, curLon]);
+      if (data.accuracy) accuracyCircle.setRadius(data.accuracy);
+
+      // Update breadcrumbs
+      if (data.breadcrumbs && data.breadcrumbs.length > 0) {
+        const pts = data.breadcrumbs.map(pt => [pt.latitude, pt.longitude]);
+        breadcrumbLine.setLatLngs(pts);
+      } else {
+        breadcrumbLine.addLatLng([curLat, curLon]);
+      }
+
+      // Pan smoothly
+      map.panTo([curLat, curLon]);
+    }
+
+    // Live poller
+    async function pollLiveLocation() {
+      if (!isEmergencyActive) return;
+
+      try {
+        const res = await fetch(`/api/emergency/track/${TOKEN}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            updateUI(json.data);
+          }
+        }
+      } catch (e) {
+        console.warn("Location polling error:", e);
+      }
+    }
+
+    // Refresh interval every 3 seconds
+    setInterval(pollLiveLocation, 3000);
+
+    // Seconds-ago timer & countdown display
+    setInterval(() => {
+      secondsSinceLastPing++;
+      countdownSecs = (countdownSecs <= 1) ? 3 : (countdownSecs - 1);
+      
+      const countdownEl = document.getElementById('refresh-countdown');
+      if (countdownEl && isEmergencyActive) {
+        countdownEl.innerText = countdownSecs;
+      }
+      
+      const timeText = document.getElementById('time-text');
+      if (timeText && isEmergencyActive) {
+        if (secondsSinceLastPing < 4) {
+          timeText.innerText = 'Just now';
+        } else {
+          timeText.innerText = `${secondsSinceLastPing}s ago`;
+        }
+      }
+    }, 1000);
+
+    function shareTrackingLink() {
+      const url = window.location.href;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(() => {
+          alert("Tracking link copied to clipboard!\nYou can paste and send this via WhatsApp or SMS.");
+        });
+      } else {
+        prompt("Copy this tracking link:", url);
+      }
+    }
+  </script>
+  {% endif %}
+
+</body>
+</html>

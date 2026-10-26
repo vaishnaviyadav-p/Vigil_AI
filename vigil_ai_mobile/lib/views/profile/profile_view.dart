@@ -51,18 +51,20 @@ class ProfileView extends ConsumerWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    user?.fullName ?? 'Ananya Sharma',
+                    user?.fullName ?? 'User Profile',
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    user?.email ?? 'user@vigilai.com',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                  ),
-                  Text(
-                    user?.phone ?? '+91 9876543210',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                  ),
+                  if (user?.email != null && user!.email.isNotEmpty)
+                    Text(
+                      user.email,
+                      style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                  if (user?.phone != null && user!.phone.isNotEmpty)
+                    Text(
+                      user.phone,
+                      style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    ),
                 ],
               ),
             ),
@@ -166,12 +168,32 @@ class ProfileView extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 13)),
+          SizedBox(
+            width: 105,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              softWrap: true,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+                fontSize: 13,
+              ),
+            ),
+          ),
         ],
       ),
+
     );
   }
 

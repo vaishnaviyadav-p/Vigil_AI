@@ -37,12 +37,37 @@ class StorageService {
   }
 
   // Base URL config
+  static String normalizeUrl(String? url) {
+    if (url == null || url.trim().isEmpty) {
+      return AppConstants.defaultBaseUrl;
+    }
+    String clean = url.trim();
+    while (clean.endsWith('/')) {
+      clean = clean.substring(0, clean.length - 1);
+    }
+    // Fix accidental duplication like http://.../api/api
+    while (clean.endsWith('/api/api')) {
+      clean = clean.substring(0, clean.length - 4);
+    }
+    // Ensure /api suffix exists for Flask backend API routes
+    if (!clean.endsWith('/api')) {
+      clean = '$clean/api';
+    }
+    return clean;
+  }
+
   Future<void> saveBaseUrl(String url) async {
-    await _prefs?.setString(AppConstants.baseUrlKey, url);
+    final clean = normalizeUrl(url);
+    await _prefs?.setString(AppConstants.baseUrlKey, clean);
   }
 
   String getBaseUrl() {
-    return _prefs?.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
+    final raw = _prefs?.getString(AppConstants.baseUrlKey);
+    return normalizeUrl(raw);
+  }
+
+  Future<void> resetBaseUrl() async {
+    await _prefs?.remove(AppConstants.baseUrlKey);
   }
 
   // Onboarding

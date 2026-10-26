@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vigil_ai_mobile/core/network/api_client.dart';
 import 'package:vigil_ai_mobile/core/storage/storage_service.dart';
 import 'package:vigil_ai_mobile/models/user_model.dart';
+import 'package:vigil_ai_mobile/providers/contact_provider.dart';
 
 enum AuthStatus { initial, authenticated, unauthenticated, loading }
 
@@ -33,15 +34,17 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
+  final Ref _ref;
   final ApiClient _api = ApiClient();
   final StorageService _storage = StorageService();
 
-  AuthNotifier() : super(AuthState.initial());
+  AuthNotifier(this._ref) : super(AuthState.initial());
 
   Future<void> checkAuth() async {
     state = state.copyWith(status: AuthStatus.loading);
     final token = await _storage.getToken();
     if (token == null || token.isEmpty) {
+      _ref.read(contactProvider.notifier).clear();
       state = state.copyWith(status: AuthStatus.unauthenticated);
       return;
     }
@@ -51,14 +54,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (response.data['success'] == true) {
         final user = UserModel.fromJson(response.data['data']);
         state = state.copyWith(status: AuthStatus.authenticated, user: user);
+        // Automatically fetch emergency contacts for the authenticated user
+        await _ref.read(contactProvider.notifier).fetchContacts();
       } else {
         await _storage.clearTokens();
+        _ref.read(contactProvider.notifier).clear();
         state = state.copyWith(status: AuthStatus.unauthenticated);
       }
     } catch (e) {
-      // In demo mode or offline, keep token session or prompt login
+      // In demo mode or offline, prompt login
+      _ref.read(contactProvider.notifier).clear();
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
+  }
+
+  String _extractDioErrorMessage(DioException e, String defaultPrefix) {
+    if (e.response?.data is Map && (e.response!.data as Map)['message'] != null) {
+      return (e.response!.data as Map)['message'].toString();
+    }
+    if (e.response?.statusCode != null) {
+      return 'HTTP ${e.response!.statusCode} (${e.response?.statusMessage ?? "Error"}) for ${e.requestOptions.uri}';
+    }
+    if (e.type == DioExceptionType.connectionTimeout) {
+      return 'Connection timed out reaching ${e.requestOptions.uri}. Check Wi-Fi / IP.';
+    }
+    if (e.type == DioExceptionType.connectionError) {
+      return 'Cannot connect to ${e.requestOptions.uri}. Check server URL in Settings.';
+    }
+    return e.message ?? '$defaultPrefix. Check server URL in Settings.';
   }
 
   Future<bool> login(String identifier, String password) async {
@@ -77,6 +100,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         }
         final user = UserModel.fromJson(data['user']);
         state = state.copyWith(status: AuthStatus.authenticated, user: user);
+
+        // Synchronize emergency contacts for this specific authenticated user
+        await _ref.read(contactProvider.notifier).fetchContacts();
         return true;
       } else {
         state = state.copyWith(
@@ -86,7 +112,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return false;
       }
     } on DioException catch (e) {
-      final msg = e.response?.data?['message'] ?? 'Connection error. Check server URL in Settings.';
+      final msg = _extractDioErrorMessage(e, 'Connection error');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         errorMessage: msg,
@@ -123,6 +149,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _storage.saveToken(data['access_token']);
         final user = UserModel.fromJson(data['user']);
         state = state.copyWith(status: AuthStatus.authenticated, user: user);
+
+        // Synchronize fresh contacts for registered user
+        await _ref.read(contactProvider.notifier).fetchContacts();
         return true;
       } else {
         state = state.copyWith(
@@ -132,7 +161,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return false;
       }
     } on DioException catch (e) {
-      final msg = e.response?.data?['message'] ?? 'Registration error';
+      final msg = _extractDioErrorMessage(e, 'Registration error');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         errorMessage: msg,
@@ -146,6 +175,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _api.dio.post('/auth/logout');
     } catch (_) {}
     await _storage.clearTokens();
+    // Wipe contacts from memory immediately on logout to prevent leak to another account
+    _ref.read(contactProvider.notifier).clear();
     state = state.copyWith(status: AuthStatus.unauthenticated, user: null);
   }
 
@@ -183,5 +214,5 @@ class AuthNotifier extends StateNotifier<AuthState> {
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier();
+  return AuthNotifier(ref);
 });

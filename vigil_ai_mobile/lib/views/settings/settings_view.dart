@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vigil_ai_mobile/core/constants/app_constants.dart';
+import 'package:vigil_ai_mobile/core/network/api_client.dart';
 import 'package:vigil_ai_mobile/core/storage/storage_service.dart';
 import 'package:vigil_ai_mobile/providers/auth_provider.dart';
 import 'package:vigil_ai_mobile/providers/demo_mode_provider.dart';
@@ -41,7 +42,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
   }
 
   Future<void> _saveSettings() async {
-    await _storage.saveBaseUrl(_urlCtrl.text.trim());
+    final cleanUrl = StorageService.normalizeUrl(_urlCtrl.text.trim());
+    await _storage.saveBaseUrl(cleanUrl);
+    ApiClient().updateBaseUrl(cleanUrl);
     await ref.read(authProvider.notifier).updateSettings(
           emergencyCountdown: _countdown,
           shakeToSos: _shakeToSos,
@@ -51,7 +54,7 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settings saved successfully.')),
+        SnackBar(content: Text('Settings saved. URL: $cleanUrl')),
       );
     }
   }

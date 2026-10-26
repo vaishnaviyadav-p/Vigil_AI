@@ -6,7 +6,7 @@ class AppConstants {
   
   // Default API base URL for Android Emulator (10.0.2.2 points to host localhost)
   // Can be adjusted in Settings for physical device testing
-  static const String defaultBaseUrl = 'http://192.168.1.21:5000/api';
+  static const String defaultBaseUrl ='http://10.86.146.132:5000/api';
   
   // Storage keys
   static const String tokenKey = 'vigil_jwt_token';

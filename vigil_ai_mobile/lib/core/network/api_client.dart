@@ -42,6 +42,59 @@ class ApiClient {
   }
 
   void updateBaseUrl(String newUrl) {
-    dio.options.baseUrl = newUrl;
+    dio.options.baseUrl = StorageService.normalizeUrl(newUrl);
+  }
+
+  Future<({bool success, String message})> testConnection([String? testUrl]) async {
+    final targetUrl = StorageService.normalizeUrl(testUrl ?? _storage.getBaseUrl());
+    final testDio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 4),
+        receiveTimeout: const Duration(seconds: 4),
+      ),
+    );
+
+    // Root test URL: strips /api to hit Flask root /
+    String rootUrl = targetUrl;
+    if (rootUrl.endsWith('/api')) {
+      rootUrl = rootUrl.substring(0, rootUrl.length - 4);
+    }
+    if (rootUrl.isEmpty) rootUrl = '/';
+
+    try {
+      final res = await testDio.get(rootUrl);
+      if (res.statusCode == 200) {
+        final status = (res.data is Map) ? (res.data['status'] ?? 'OK') : 'OK';
+        return (
+          success: true,
+          message: 'Connected successfully ($status) to $targetUrl',
+        );
+      }
+      return (
+        success: false,
+        message: 'Server responded with HTTP ${res.statusCode}',
+      );
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout) {
+        return (
+          success: false,
+          message: 'Timeout connecting to $targetUrl. Verify same Wi-Fi network.',
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        return (
+          success: false,
+          message: 'Connection failed at $targetUrl. Check IP / port 5000.',
+        );
+      }
+      return (
+        success: false,
+        message: 'Network error: ${e.message ?? e.toString()}',
+      );
+    } catch (e) {
+      return (
+        success: false,
+        message: 'Connection failed: $e',
+      );
+    }
   }
 }

@@ -89,22 +89,64 @@ class VigilAITestCase(unittest.TestCase):
 
     def test_07_sos_lifecycle(self):
         headers = {'Authorization': f'Bearer {self.token}'}
-        # Trigger SOS
+        # Trigger SOS with real coordinates
         res_sos = self.client.post('/api/emergency/sos', headers=headers, json={
             'latitude': 12.9716,
             'longitude': 77.5946,
+            'accuracy': 8.5,
             'alert_type': 'SOS_MANUAL'
         })
         self.assertEqual(res_sos.status_code, 201)
-        sos_id = res_sos.get_json()['data']['emergency']['id']
+        sos_data = res_sos.get_json()['data']
+        sos_id = sos_data['emergency']['id']
+        tracking_token = sos_data['tracking_token']
+        tracking_url = sos_data['tracking_url']
 
-        # Verify active
+        self.assertIsNotNone(tracking_token)
+        self.assertIn('/track/', tracking_url)
+        self.assertIn('sms_dispatch', sos_data)
+
+        # 1. Test public tracking endpoint (NO authentication header required!)
+        res_track = self.client.get(f'/api/emergency/track/{tracking_token}')
+        self.assertEqual(res_track.status_code, 200)
+        track_data = res_track.get_json()['data']
+        self.assertEqual(track_data['status'], 'ACTIVE')
+        self.assertTrue(track_data['is_live_sharing'])
+        self.assertEqual(track_data['user_name'], 'Ananya Sharma')
+        self.assertNotIn('password_hash', track_data)
+        self.assertNotIn('email', track_data)
+
+        # 2. Test live GPS location update stream
+        res_update = self.client.post(f'/api/emergency/{sos_id}/location', headers=headers, json={
+            'latitude': 12.9730,
+            'longitude': 77.5960,
+            'accuracy': 6.0,
+            'speed': 1.4
+        })
+        self.assertEqual(res_update.status_code, 200)
+        self.assertEqual(res_update.get_json()['data']['emergency']['latitude'], 12.9730)
+
+        # 3. Test HTML web tracking page
+        res_page = self.client.get(f'/track/{tracking_token}')
+        self.assertEqual(res_page.status_code, 200)
+        self.assertIn(b'VIGIL AI', res_page.data)
+        self.assertIn(b'Leaflet', res_page.data)
+
+        # 4. Verify active status via API
         res_act = self.client.get('/api/emergency/active', headers=headers)
         self.assertTrue(res_act.get_json()['data']['has_active'])
 
-        # Resolve
+        # 5. Resolve SOS
         res_res = self.client.post(f'/api/emergency/{sos_id}/resolve', headers=headers)
         self.assertEqual(res_res.status_code, 200)
+        resolved_data = res_res.get_json()['data']
+        self.assertEqual(resolved_data['status'], 'RESOLVED')
+        self.assertFalse(resolved_data['is_live_sharing'])
+
+        # 6. Verify public tracking endpoint reflects RESOLVED status
+        res_track_after = self.client.get(f'/api/emergency/track/{tracking_token}')
+        self.assertEqual(res_track_after.status_code, 200)
+        self.assertEqual(res_track_after.get_json()['data']['status'], 'RESOLVED')
 
     def test_08_safe_route_recommendation(self):
         res = self.client.post('/api/analytics/routes', json={

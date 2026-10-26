@@ -65,17 +65,36 @@ def create_app(config_class=Config):
     def admin_dashboard():
         return render_template('admin_dashboard.html')
 
+    @app.route('/track/<token>')
+    def live_tracking_page(token):
+        from app.models import EmergencyAlert
+        emergency = EmergencyAlert.query.filter_by(tracking_token=token).first()
+        if not emergency:
+            return render_template('sos_tracking.html', error="Invalid or expired emergency tracking link.", emergency=None, token=token), 404
+        return render_template('sos_tracking.html', error=None, emergency=emergency, token=token)
+
     @app.route('/uploads/<filename>')
     def uploaded_file(filename):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-    # Initialize database tables
+    # Initialize database tables and verify schema
     with app.app_context():
         try:
             db.create_all()
+            with db.engine.connect() as conn:
+                res = conn.execute(db.text("PRAGMA table_info(emergency_alerts);")).fetchall()
+                cols = [row[1] for row in res]
+                if 'tracking_token' not in cols:
+                    conn.execute(db.text("ALTER TABLE emergency_alerts ADD COLUMN tracking_token VARCHAR(64);"))
+                    conn.commit()
+                    print("[VIGIL AI] Added column tracking_token to emergency_alerts table.")
+                if 'last_location_update' not in cols:
+                    conn.execute(db.text("ALTER TABLE emergency_alerts ADD COLUMN last_location_update DATETIME;"))
+                    conn.commit()
+                    print("[VIGIL AI] Added column last_location_update to emergency_alerts table.")
             print("[VIGIL AI] Database tables verified/created successfully.")
         except Exception as e:
-            print(f"[VIGIL AI] Error during database initialization: {e}")
+            print(f"[VIGIL AI] Database schema check note: {e}")
 
         # Preload ML Service
         MLService.get_instance()

@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from app.models import db, Incident, EmergencyAlert, SafetyZone
 from app.utils import api_response, haversine_distance
+from app.services.route_service import calculate_safe_route_recommendation, geocode_search
 
 analytics_bp = Blueprint('analytics', __name__, url_prefix='/api/analytics')
 
@@ -64,54 +65,69 @@ def get_analytics_summary():
         'emergencies_by_type': emergencies_by_type
     })
 
+@analytics_bp.route('/geocode', methods=['GET'])
+def geocode_places():
+    query = request.args.get('q', '').strip()
+    if not query:
+        return api_response(True, 'Empty query', [])
+    
+    # Check internal safety zones first
+    results = []
+    local_zones = SafetyZone.query.filter(SafetyZone.name.ilike(f"%{query}%")).all()
+    for z in local_zones:
+        results.append({
+            'name': z.name,
+            'display_name': f"{z.name} ({z.zone_type.replace('_', ' ').title()} Zone)",
+            'latitude': z.latitude,
+            'longitude': z.longitude,
+            'is_internal': True
+        })
+        
+    # Query Nominatim
+    external = geocode_search(query)
+    # Deduplicate
+    for ext in external:
+        if not any(abs(r['latitude'] - ext['latitude']) < 0.001 and abs(r['longitude'] - ext['longitude']) < 0.001 for r in results):
+            results.append(ext)
+            
+    return api_response(True, 'Geocoding results', results[:10])
+
 @analytics_bp.route('/routes', methods=['POST'])
 def recommend_safe_route():
     """
     Computes a Recommended Safe Route vs Alternative Route.
-    Evaluates exposure to safety zones and incident density.
+    Evaluates exposure to safety zones and incident density using real GPS data.
     """
     data = request.get_json() or {}
-    start_lat = float(data.get('start_lat', 12.9716))
-    start_lon = float(data.get('start_lon', 77.5946))
-    dest_lat = float(data.get('dest_lat', 12.9850))
-    dest_lon = float(data.get('dest_lon', 77.6100))
+    start_lat = data.get('start_lat')
+    start_lon = data.get('start_lon')
+    dest_lat = data.get('dest_lat')
+    dest_lon = data.get('dest_lon')
+    mode = data.get('mode', 'foot')
 
-    direct_dist = haversine_distance(start_lat, start_lon, dest_lat, dest_lon)
+    if start_lat is None or start_lon is None or dest_lat is None or dest_lon is None:
+        return api_response(False, 'start_lat, start_lon, dest_lat, and dest_lon are required', status_code=400)
 
-    # Waypoints for Safe Route (steers around known high-risk zones)
-    safe_waypoints = [
-        {'lat': start_lat, 'lon': start_lon},
-        {'lat': (start_lat * 0.7) + (dest_lat * 0.3) + 0.003, 'lon': (start_lon * 0.7) + (dest_lon * 0.3) - 0.002},
-        {'lat': (start_lat * 0.3) + (dest_lat * 0.7) + 0.004, 'lon': (start_lon * 0.3) + (dest_lon * 0.7) - 0.001},
-        {'lat': dest_lat, 'lon': dest_lon}
-    ]
+    try:
+        start_lat = float(start_lat)
+        start_lon = float(start_lon)
+        dest_lat = float(dest_lat)
+        dest_lon = float(dest_lon)
+    except (ValueError, TypeError):
+        return api_response(False, 'Coordinates must be valid numbers', status_code=400)
 
-    # Waypoints for Direct/Alternative Route (passes closer to caution zones)
-    direct_waypoints = [
-        {'lat': start_lat, 'lon': start_lon},
-        {'lat': (start_lat + dest_lat) / 2.0, 'lon': (start_lon + dest_lon) / 2.0},
-        {'lat': dest_lat, 'lon': dest_lon}
-    ]
+    # Fetch active safety zones and recorded incidents from database
+    zones = SafetyZone.query.filter_by(is_active=True).all()
+    incidents = Incident.query.all()
 
-    return api_response(True, 'Route recommendations evaluated', {
-        'recommended_safe_route': {
-            'name': 'AI Recommended Safe Path',
-            'safety_score': 92,
-            'risk_level': 'SAFE',
-            'distance_km': round((direct_dist * 1.15) / 1000.0, 2),
-            'estimated_time_mins': round(((direct_dist * 1.15) / 1000.0) / 4.5 * 60),
-            'risk_exposure': 'Minimal (Avoids high-risk safety zones)',
-            'waypoints': safe_waypoints,
-            'is_recommended': True
-        },
-        'alternative_route': {
-            'name': 'Shortest Direct Path',
-            'safety_score': 64,
-            'risk_level': 'MEDIUM',
-            'distance_km': round(direct_dist / 1000.0, 2),
-            'estimated_time_mins': round((direct_dist / 1000.0) / 4.5 * 60),
-            'risk_exposure': 'Crosses 1 caution zone and 2 reported incidents',
-            'waypoints': direct_waypoints,
-            'is_recommended': False
-        }
-    })
+    route_data = calculate_safe_route_recommendation(
+        start_lat=start_lat,
+        start_lon=start_lon,
+        dest_lat=dest_lat,
+        dest_lon=dest_lon,
+        zones=zones,
+        incidents=incidents,
+        mode=mode
+    )
+
+    return api_response(True, 'Route recommendations evaluated', route_data)

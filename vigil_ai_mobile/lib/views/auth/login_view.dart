@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:vigil_ai_mobile/core/constants/app_constants.dart';
 import 'package:vigil_ai_mobile/core/storage/storage_service.dart';
+import 'package:vigil_ai_mobile/core/network/api_client.dart';
 import 'package:vigil_ai_mobile/providers/auth_provider.dart';
 
 class LoginView extends ConsumerStatefulWidget {
@@ -14,8 +15,8 @@ class LoginView extends ConsumerStatefulWidget {
 
 class _LoginViewState extends ConsumerState<LoginView> {
   final _formKey = GlobalKey<FormState>();
-  final _identifierCtrl = TextEditingController(text: 'user@vigilai.com');
-  final _passwordCtrl = TextEditingController(text: 'user123');
+  final _identifierCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
   bool _obscurePassword = true;
 
   @override
@@ -39,47 +40,122 @@ class _LoginViewState extends ConsumerState<LoginView> {
   void _showServerUrlDialog() {
     final storage = StorageService();
     final urlCtrl = TextEditingController(text: storage.getBaseUrl());
+    String? testResult;
+    bool isTesting = false;
+    bool testSuccess = false;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Server Configuration', style: TextStyle(fontSize: 18)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Android Emulator: http://10.0.2.2:5000/api\nPhysical Phone: http://<PC_LAN_IP>:5000/api',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Server Configuration', style: TextStyle(fontSize: 18)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Wi-Fi: http://<PC_LAN_IP>:5000/api\nUSB Cable: http://127.0.0.1:5000/api',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Backend Base URL',
+                    prefixIcon: Icon(Icons.link),
+                    hintText: 'http://192.168.1.7:5000/api',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: isTesting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.network_check, size: 16),
+                        label: Text(isTesting ? 'Testing...' : 'Test Connection'),
+                        onPressed: isTesting
+                            ? null
+                            : () async {
+                                setDialogState(() {
+                                  isTesting = true;
+                                  testResult = null;
+                                });
+                                final res = await ApiClient().testConnection(urlCtrl.text.trim());
+                                setDialogState(() {
+                                  isTesting = false;
+                                  testSuccess = res.success;
+                                  testResult = res.message;
+                                });
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          urlCtrl.text = AppConstants.defaultBaseUrl;
+                          testResult = null;
+                        });
+                      },
+                      child: const Text('Reset', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                if (testResult != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: testSuccess
+                          ? AppColors.safeGreen.withValues(alpha: 0.15)
+                          : AppColors.sosRed.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: testSuccess ? AppColors.safeGreen : AppColors.sosRed,
+                      ),
+                    ),
+                    child: Text(
+                      testResult!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: testSuccess ? AppColors.safeGreen : AppColors.sosRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Backend Base URL',
-                prefixIcon: Icon(Icons.link),
-              ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final normalized = StorageService.normalizeUrl(urlCtrl.text.trim());
+                await storage.saveBaseUrl(normalized);
+                ApiClient().updateBaseUrl(normalized);
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Server URL set to: $normalized')),
+                  );
+                }
+              },
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              await storage.saveBaseUrl(urlCtrl.text.trim());
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Server URL updated')),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
   }

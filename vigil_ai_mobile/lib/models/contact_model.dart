@@ -48,4 +48,28 @@ class ContactModel {
       'notification_preference': notificationPreference,
     };
   }
+
+  ContactModel copyWith({
+    int? id,
+    int? userId,
+    String? name,
+    String? phone,
+    String? email,
+    String? relationship,
+    int? priority,
+    bool? isActive,
+    String? notificationPreference,
+  }) {
+    return ContactModel(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      relationship: relationship ?? this.relationship,
+      priority: priority ?? this.priority,
+      isActive: isActive ?? this.isActive,
+      notificationPreference: notificationPreference ?? this.notificationPreference,
+    );
+  }
 }
